@@ -1,0 +1,14 @@
+# Brain directory (internal documentation)
+.io/
+
+# Temporary files
+restart.flag
+
+# User images (keep structure, ignore content)
+images/*.png
+images/*.jpg
+images/*.bmp
+!images/.gitkeep
+
+# User config (keep template only)
+config/config.ini

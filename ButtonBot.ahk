@@ -20,6 +20,7 @@ global lastKeyPress := 0
 global lastSmartResponse := 0
 global isRoboTyping := false
 global lastGuardianAction := 0
+global guardianCycles := 0 ; Contador de ciclos para optimización
 global smartConfig := {
     enabled: false,
     stopFile: "",
@@ -226,9 +227,11 @@ DetectAndApprove() {
             }
         }
     }
-    ; --- INICIO LÓGICA CONTEXT GUARDIAN ---
-    if guardianConfig.enabled && (currentTime - lastGuardianAction > guardianConfig.cooldown) {
-        ; 1. ¿Aviso de compactación? (Buscamos en ventana completa porque puede salir en cualquier lado)
+    ; --- INICIO LÓGICA CONTEXT GUARDIAN (OPTIMIZADO: Escaneo cada 5 ciclos ~1s) ---
+    global guardianCycles := guardianCycles + 1
+    
+    if guardianConfig.enabled && (Mod(guardianCycles, 5) == 0) && (currentTime - lastGuardianAction > guardianConfig.cooldown) {
+        ; 1. ¿Aviso de compactación? (Buscamos en ventana completa)
         if (guardianConfig.compactFile != "" && FileExist(guardianConfig.compactFile) && ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile)) {
             if FileExist(guardianConfig.compactPromptFile) {
                 lastGuardianAction := currentTime
@@ -288,7 +291,10 @@ DetectAndApprove() {
     }
     ; --- FIN LÓGICA CONTEXT GUARDIAN ---
     
-    ; Procesar cada botón configurado
+    ; Procesar cada botón configurado (OPTIMIZADO: Escaneo cada 10 ciclos ~2s)
+    if (Mod(guardianCycles, 10) != 0)
+        return
+
     for btn in buttons {
         if !btn.enabled
             continue
@@ -382,10 +388,12 @@ DetectAndApprove() {
         fListo := eListo ? ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile) : 0
         fAllow := eAllow ? ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile) : 0
 
-        capsStatus := GetKeyState("CapsLock", "T") ? "🔴 ACTIVADO (Bot Pausado)" : "🟢 DESACTIVADO (Bot Operativo)"
+        capsStatus := GetKeyState("CapsLock", "T") ? "🔴 ACTIVADO (Kill-switch)" : "🟢 DESACTIVADO"
+        softStatus := smartConfig.enabled ? "🟢 ACTIVO" : "⏸ PAUSADO (Manual)"
         
-        msg := "ESTADO GLOBAL:`n"
-             . "CapsLock: " capsStatus "`n`n"
+        msg := "ESTADO DEL BOT:`n"
+             . "Kill-switch (CapsLock): " capsStatus "`n"
+             . "Estado Software (^!+P): " softStatus "`n`n"
              . "--- SMART RESPONSE ---`n"
              . "Stop (IA Trabajando) [" fileStop "]: " (eStop ? "📁 " : "📁❌ ") (fStop ? "🔍✅" : "🔍❌") "`n"
              . "Ask (Listo) [" fileTrig "]: " (eTrig ? "📁 " : "📁❌ ") (fTrigger ? "🔍✅" : "🔍❌") "`n`n"
@@ -410,7 +418,8 @@ DetectAndApprove() {
         elapsed := A_TickCount - startTime
         msg .= "`nTiempo: " elapsed " ms | Var: " smartConfig.variation
              
-        TrayTip(msg, "ButtonBot Diagnóstico Extra", 4)
+        ToolTip(msg)
+        SetTimer(() => ToolTip(), -6000) ; Quitar en 6 segundos
     } catch Error as err {
         TrayTip("ButtonBot", "Error: " err.Message, 1)
     }
@@ -441,21 +450,20 @@ OpenConfig(*) {
     Run(A_ScriptDir "\ButtonBotConfig.ahk")
 }
 
-; Pausar/Reanudar Ctrl+Alt+Shift+P
+; Pausar/Reanudar Ctrl+Alt+Shift+P (Pausa de Software)
 ^!+p:: {
-    global buttons
-    allDisabled := true
-    for btn in buttons {
-        if btn.enabled {
-            allDisabled := false
-            break
-        }
-    }
+    global buttons, smartConfig, guardianConfig
+    
+    ; Determinar el nuevo estado basado en si SmartResponse está encendido
+    newState := !smartConfig.enabled
+    
+    smartConfig.enabled := newState
+    guardianConfig.enabled := newState
     
     for btn in buttons
-        btn.enabled := allDisabled
+        btn.enabled := newState
     
-    TrayTip("ButtonBot", allDisabled ? "✓ Activado" : "⏸ Pausado", 1)
+    TrayTip("ButtonBot", newState ? "✓ Bot Totalmente Activado" : "⏸ Bot Totalmente Pausado", 1)
 }
 
 ; Salir

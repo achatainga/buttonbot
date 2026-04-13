@@ -147,7 +147,7 @@ if minInterval < 50
     minInterval := 50
 SetTimer(DetectAndApprove, minInterval)
 
-TrayTip("ButtonBot", "✓ Activo | " defaults.reloadHotkey ": Reload | " defaults.configHotkey ": Config | Ctrl+Alt+P: Pausar", 4)
+TrayTip("ButtonBot", "✓ Activo | " defaults.reloadHotkey ": Reload | " defaults.configHotkey ": Config | Ctrl+Alt+Shift+P: Pausar", 4)
 
 ; Función principal de detección (OPTIMIZADA + HANDLE VALIDATION)
 DetectAndApprove() {
@@ -255,31 +255,42 @@ DetectAndApprove() {
     )", "Instrucciones de Captura")
 }
 
-; Prueba de detección Ctrl+Alt+Shift+T
+; Prueba de detección Ctrl+Alt+Shift+T (COMPLETA)
 ^!+t:: {
-    global smartConfig
+    global smartConfig, buttons
     try {
         hwnd := WinGetID("A")
         WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " hwnd)
         
         startTime := A_TickCount
-        
-        ; Restringir búsqueda solo a los últimos 250px para máxima velocidad
         searchY := (winY + winH) - 250
         if searchY < winY
             searchY := winY
         
+        ; 1. SmartResponse Results
         foundStop := ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile)
         foundTrigger := ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile)
         
-        elapsed := A_TickCount - startTime
+        msg := "--- SMART RESPONSE ---`n"
+             . "Stop (Trabajando): " (foundStop ? "❌" : "✅") "`n"
+             . "Ask (Listo): " (foundTrigger ? "✅" : "❌") "`n`n"
+             . "--- BOTONES ACTIVOS ---`n"
         
-        msg := "IA Trabajando (Stop): " (foundStop ? "❌ DETECTADO" : "✅ NO visible") . "`n"
-             . "Campo Listo (Ask): " (foundTrigger ? "✅ DETECTADO" : "❌ NO visible") . "`n"
-             . "Variación: " smartConfig.variation . "`n"
-             . "Tiempo de búsqueda: " elapsed " ms"
+        ; 2. Botones del Config
+        for btn in buttons {
+            if !btn.enabled
+                continue
+            
+            ; Intentar buscar en ventana completa para botones generales
+            name := StrSplit(btn.file, ["\", "/"]).Pop()
+            found := ImageSearch(&fX, &fY, winX, winY, winX + winW, winY + winH, "*" btn.imageVariation " " btn.file)
+            msg .= name ": " (found ? "✅" : "❌") "`n"
+        }
+        
+        elapsed := A_TickCount - startTime
+        msg .= "`nTiempo: " elapsed " ms | Var: " smartConfig.variation
              
-        TrayTip(msg, "ButtonBot Diagnóstico", 4)
+        TrayTip(msg, "ButtonBot Diagnóstico Extra", 4)
     } catch {
         TrayTip("ButtonBot", "Error: Asegúrate de que la ventana esté activa", 1)
     }
@@ -310,8 +321,8 @@ OpenConfig(*) {
     Run(A_ScriptDir "\ButtonBotConfig.ahk")
 }
 
-; Pausar/Reanudar
-^!p:: {
+; Pausar/Reanudar Ctrl+Alt+Shift+P
+^!+p:: {
     global buttons
     allDisabled := true
     for btn in buttons {

@@ -342,7 +342,7 @@ DetectAndApprove() {
 
 ; Prueba de detección Ctrl+Alt+Shift+T (COMPLETA - Compatible con Bloq Mayús)
 *^!+t:: {
-    global smartConfig, buttons, guardianConfig
+    global smartConfig, buttons, guardianConfig, defaults
     
     hwnd := WinExist("A")
     if !hwnd {
@@ -396,8 +396,8 @@ DetectAndApprove() {
         msg .= "`nTiempo: " elapsed " ms | Var: " smartConfig.variation
              
         TrayTip(msg, "ButtonBot Diagnóstico Extra", 4)
-    } catch {
-        TrayTip("ButtonBot", "Error: Asegúrate de que la ventana esté activa", 1)
+    } catch Error as err {
+        TrayTip("ButtonBot", "Error: " err.Message, 1)
     }
 }
 

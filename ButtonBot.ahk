@@ -203,10 +203,10 @@ DetectAndApprove() {
                 if searchY < winY
                     searchY := winY
                 
-                if !ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile) {
+                if (smartConfig.stopFile != "" && FileExist(smartConfig.stopFile) && !ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile)) {
                     
                     ; 2. ¿Está el campo listo para escribir?
-                    if ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) {
+                    if (smartConfig.triggerFile != "" && FileExist(smartConfig.triggerFile) && ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile)) {
                         lastSmartResponse := currentTime
                         global isRoboTyping := true
                         Click(tX + 20, tY + 10)
@@ -229,7 +229,7 @@ DetectAndApprove() {
     ; --- INICIO LÓGICA CONTEXT GUARDIAN ---
     if guardianConfig.enabled && (currentTime - lastGuardianAction > guardianConfig.cooldown) {
         ; 1. ¿Aviso de compactación? (Buscamos en ventana completa porque puede salir en cualquier lado)
-        if ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile) {
+        if (guardianConfig.compactFile != "" && FileExist(guardianConfig.compactFile) && ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile)) {
             if FileExist(guardianConfig.compactPromptFile) {
                 lastGuardianAction := currentTime
                 prompt := FileRead(guardianConfig.compactPromptFile)
@@ -253,7 +253,7 @@ DetectAndApprove() {
         }
         
         ; 2. ¿Error de contexto lleno?
-        if ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile) {
+        if (guardianConfig.recoveryFile != "" && FileExist(guardianConfig.recoveryFile) && ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile)) {
             if FileExist(guardianConfig.recoveryPromptFile) {
                 lastGuardianAction := currentTime
                 prompt := FileRead(guardianConfig.recoveryPromptFile)
@@ -277,8 +277,8 @@ DetectAndApprove() {
         }
 
         ; 3. ¿La IA dijo 'LISTO' y se ve el botón 'ALLOW'? (Auto-compactación)
-        if ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile) {
-            if ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile) {
+        if (guardianConfig.listoFile != "" && FileExist(guardianConfig.listoFile) && ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile)) {
+            if (guardianConfig.allowFile != "" && FileExist(guardianConfig.allowFile) && ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile)) {
                 lastGuardianAction := currentTime
                 Click(aX + 20, aY + 10)
                 TrayTip("ButtonBot", "✅ Context Guardian: Compactación Permitida automáticamente", 1)
@@ -359,26 +359,26 @@ DetectAndApprove() {
             searchY := winY
         
         ; 1. SmartResponse Results
-        foundStop := ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile)
-        foundTrigger := ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile)
+        fStop := (smartConfig.stopFile != "" && FileExist(smartConfig.stopFile)) ? ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile) : 0
+        fTrigger := (smartConfig.triggerFile != "" && FileExist(smartConfig.triggerFile)) ? ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) : 0
         
-        foundCompact := ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile)
-        foundRecovery := ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile)
-        foundListo := ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile)
-        foundAllow := ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile)
+        fCompact := (guardianConfig.compactFile != "" && FileExist(guardianConfig.compactFile)) ? ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile) : 0
+        fRecovery := (guardianConfig.recoveryFile != "" && FileExist(guardianConfig.recoveryFile)) ? ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile) : 0
+        fListo := (guardianConfig.listoFile != "" && FileExist(guardianConfig.listoFile)) ? ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile) : 0
+        fAllow := (guardianConfig.allowFile != "" && FileExist(guardianConfig.allowFile)) ? ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile) : 0
 
         capsStatus := GetKeyState("CapsLock", "T") ? "🔴 ACTIVADO (Bot Pausado)" : "🟢 DESACTIVADO (Bot Operativo)"
         
         msg := "ESTADO GLOBAL:`n"
              . "CapsLock: " capsStatus "`n`n"
              . "--- SMART RESPONSE ---`n"
-             . "Stop (Trabajando): " (foundStop ? "❌" : "✅") "`n"
-             . "Ask (Listo): " (foundTrigger ? "✅" : "❌") "`n`n"
+             . "Stop (Trabajando): " (fStop ? "❌" : "✅") "`n"
+             . "Ask (Listo): " (fTrigger ? "✅" : "❌") "`n`n"
              . "--- CONTEXT GUARDIAN ---`n"
-             . "Compact Warning: " (foundCompact ? "✅" : "❌") "`n"
-             . "Recovery Error: " (foundRecovery ? "✅" : "❌") "`n"
-             . "IA Confirm (Listo): " (foundListo ? "✅" : "❌") "`n"
-             . "Allow Button: " (foundAllow ? "✅" : "❌") "`n`n"
+             . "Compact Warning: " (fCompact ? "✅" : "❌") "`n"
+             . "Recovery Error: " (fRecovery ? "✅" : "❌") "`n"
+             . "IA Confirm (Listo): " (fListo ? "✅" : "❌") "`n"
+             . "Allow Button: " (fAllow ? "✅" : "❌") "`n`n"
              . "--- BOTONES ACTIVOS ---`n"
         
         ; 2. Botones del Config

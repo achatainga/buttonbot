@@ -27,7 +27,7 @@ global smartConfig := {
     triggerFile: "",
     text: "",
     cooldown: 5000,
-    variation: 70
+    variation: 30
 }
 
 global guardianConfig := {
@@ -151,11 +151,14 @@ LoadConfig() {
     guardianConfig.enabled := IniRead(CONFIG_FILE, "ContextGuardian", "Enabled", "false") = "true"
     if guardianConfig.enabled {
         guardianConfig.compactFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "CompactFile", "compact.png")
-        guardianConfig.recoveryFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "RecoveryFile", "too_much_content.png")
+        guardianConfig.recoveryFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "RecoveryFile", "context.png")
         guardianConfig.compactPromptFile := A_ScriptDir "\" IniRead(CONFIG_FILE, "ContextGuardian", "CompactPromptFile", "prompts\compaction.txt")
         guardianConfig.recoveryPromptFile := A_ScriptDir "\" IniRead(CONFIG_FILE, "ContextGuardian", "RecoveryPromptFile", "prompts\recovery.txt")
+        guardianConfig.enterFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "EnterFile", "enter.png")
         guardianConfig.listoFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "ListoFile", "listo.png")
         guardianConfig.allowFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "AllowFile", "allow.png")
+        guardianConfig.arrowFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "ArrowFile", "arrow.png")
+        guardianConfig.finishedFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "FinishedFile", "compact_finished.png")
         guardianConfig.cooldown := Integer(IniRead(CONFIG_FILE, "ContextGuardian", "Cooldown", "30000"))
     }
 }
@@ -178,6 +181,10 @@ TrayTip("ButtonBot", "✓ Activo | " defaults.reloadHotkey ": Reload | " default
 DetectAndApprove() {
     global buttons, lastKeyPress, lastSmartResponse, lastGuardianAction, smartConfig, guardianConfig
     
+    ; Asegurar coordenadas relativas a la ventana INMEDIATAMENTE
+    CoordMode("Pixel", "Window")
+    CoordMode("Mouse", "Window")
+    
     if !WinActive("ahk_exe Code.exe") && !WinActive("ahk_exe antigravity.exe")
         return
     
@@ -195,31 +202,135 @@ DetectAndApprove() {
     if GetKeyState("CapsLock", "T") == 1
         return
     
-    ; --- INICIO LÓGICA SMART RESPONSE ---
-    if smartConfig.enabled {
-        if (currentTime - lastSmartResponse > smartConfig.cooldown) {
-            try {
-                ; 1. ¿Está la IA trabajando? (Buscamos solo en los últimos 250px para máxima velocidad)
-                searchY := (winY + winH) - 250
-                if searchY < winY
-                    searchY := winY
+    ; --- INICIO LÓGICA CONTEXT GUARDIAN (OPTIMIZADO: Escaneo cada 3 ciclos ~1s) ---
+    global guardianCycles := guardianCycles + 1
+    
+    if guardianConfig.enabled && (Mod(guardianCycles, 3) == 0) && (currentTime - lastGuardianAction > guardianConfig.cooldown) {
+        searchW_chat := Integer(winW * 0.45)
+        searchY_msgs := 0
+        searchY_btns := Integer(winH * 0.65)
+        
+        ; 1. ¿IA LISTA + BOTÓN ALLOW O ARROW? (Acción inmediata: click)
+        if (guardianConfig.listoFile != "" && FileExist(guardianConfig.listoFile) && ImageSearch(&lX, &lY, 0, searchY_msgs, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.listoFile)) {
+            ; Buscar Allow
+            foundAllow := (guardianConfig.allowFile != "" && FileExist(guardianConfig.allowFile) && ImageSearch(&aX, &aY, 0, searchY_btns, searchW_chat, winH, "*70 " guardianConfig.allowFile))
+            ; Buscar Arrow (Flecha abajo personalizada - Variación 100 para 4K)
+            foundArrow := (guardianConfig.arrowFile != "" && FileExist(guardianConfig.arrowFile) && ImageSearch(&arX, &arY, 200, searchY_btns, 800, winH, "*100 " guardianConfig.arrowFile))
+            
+            if (foundAllow || foundArrow) {
+                lastGuardianAction := currentTime
+                targetX := foundAllow ? aX : arX
+                targetY := foundAllow ? aY : arY
+                Click(targetX + 20, targetY + 10)
+                TrayTip("ButtonBot", "✅ Context Guardian: Botón de Avance clickeado", 1)
+                return
+            }
+        }
+
+        ; 2. ¿SOLO BOTÓN ARROW (Flecha abajo)?
+        if (guardianConfig.arrowFile != "" && FileExist(guardianConfig.arrowFile) && ImageSearch(&arX, &arY, 200, searchY_btns, 800, winH, "*100 " guardianConfig.arrowFile)) {
+            lastGuardianAction := currentTime
+            Click(arX + 15, arY + 15)
+            TrayTip("ButtonBot", "⬇️ Context Guardian: Click en Flecha Abajo", 1)
+            return
+        }
+
+        ; 3. ¿COMPACTACIÓN TERMINADA O ERROR DE CONTEXTO? (Restaurar)
+        isFinished := (guardianConfig.finishedFile != "" && FileExist(guardianConfig.finishedFile) && ImageSearch(&fX, &fY, 0, searchY_msgs, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.finishedFile))
+        isError := (guardianConfig.recoveryFile != "" && FileExist(guardianConfig.recoveryFile) && ImageSearch(&rX, &rY, 0, searchY_msgs, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile))
+        
+        if (isFinished || isError) {
+            if FileExist(guardianConfig.recoveryPromptFile) {
+                lastGuardianAction := currentTime
+                prompt := FileRead(guardianConfig.recoveryPromptFile)
                 
-                if (smartConfig.stopFile != "" && FileExist(smartConfig.stopFile) && !ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile)) {
+                searchY_input_rel := winH - 600
+                if searchY_input_rel < 0
+                    searchY_input_rel := 0
+                
+                if ImageSearch(&tX, &tY, 0, searchY_input_rel, searchW_chat, winH, "*" smartConfig.variation " " smartConfig.triggerFile) {
+                    global isRoboTyping := true
+                    Click(tX + 20, tY + 10)
+                    Sleep(300)
+                    A_Clipboard := prompt
+                    Sleep(100) ; Dar tiempo al clipboard
+                    SendEvent("^v")
+                    Sleep(200) ; Pausa crucial
+                    
+                    ; Intentar hacer click en el botón de Enter si existe, si no, usar teclado
+                    if (guardianConfig.enterFile != "" && FileExist(guardianConfig.enterFile) && ImageSearch(&eX, &eY, 0, searchY_btns, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.enterFile)) {
+                        Click(eX + 10, eY + 10)
+                    } else {
+                        SendEvent("{Enter}")
+                    }
+                    global isRoboTyping := false
+                    TrayTip("ButtonBot", isFinished ? "🔄 Context Guardian: Restaurando tras Compactación" : "🔄 Context Guardian: Restaurando tras Error", 1)
+                    return
+                }
+            }
+        }
+
+        ; 3. ¿AVISO DE COMPACTACIÓN? (Si no estamos listos, enviar prompt)
+        if (guardianConfig.compactFile != "" && FileExist(guardianConfig.compactFile) && ImageSearch(&cX, &cY, 0, searchY_msgs, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.compactFile)) {
+            if FileExist(guardianConfig.compactPromptFile) {
+                lastGuardianAction := currentTime
+                prompt := FileRead(guardianConfig.compactPromptFile)
+                
+                searchY_input_rel := winH - 600
+                if searchY_input_rel < 0
+                    searchY_input_rel := 0
+                
+                if ImageSearch(&tX, &tY, 0, searchY_input_rel, searchW_chat, winH, "*" smartConfig.variation " " smartConfig.triggerFile) {
+                    global isRoboTyping := true
+                    Click(tX + 20, tY + 10)
+                    Sleep(300)
+                    A_Clipboard := prompt
+                    Sleep(100) ; Dar tiempo al clipboard
+                    SendEvent("^v")
+                    Sleep(200) ; Pausa crucial
+                    
+                    ; Intentar hacer click en el botón de Enter si existe, si no, usar teclado
+                    if (guardianConfig.enterFile != "" && FileExist(guardianConfig.enterFile) && ImageSearch(&eX, &eY, 0, searchY_btns, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.enterFile)) {
+                        Click(eX + 10, eY + 10)
+                    } else {
+                        SendEvent("{Enter}")
+                    }
+                    global isRoboTyping := false
+                    TrayTip("ButtonBot", "💾 Context Guardian: Enviando Volcado de Memoria", 1)
+                    return
+                }
+            }
+        }
+
+        ; --- LÓGICA SMART RESPONSE (Dentro del mismo ciclo para respetar prioridad) ---
+        if smartConfig.enabled && (currentTime - lastSmartResponse > smartConfig.cooldown) {
+            try {
+                ; 1. ¿Está la IA trabajando?
+                if (smartConfig.stopFile != "" && FileExist(smartConfig.stopFile) && !ImageSearch(&sX, &sY, 0, searchY_btns, searchW_chat, winH, "*" smartConfig.variation " " smartConfig.stopFile)) {
                     
                     ; 2. ¿Está el campo listo para escribir?
-                    if (smartConfig.triggerFile != "" && FileExist(smartConfig.triggerFile) && ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile)) {
+                    searchY_input_rel := winH - 600
+                    if searchY_input_rel < 0
+                        searchY_input_rel := 0
+                        
+                    if (smartConfig.triggerFile != "" && FileExist(smartConfig.triggerFile) && ImageSearch(&tX, &tY, 0, searchY_input_rel, searchW_chat, winH, "*" smartConfig.variation " " smartConfig.triggerFile)) {
                         lastSmartResponse := currentTime
                         global isRoboTyping := true
                         Click(tX + 20, tY + 10)
                         Sleep(300)
-                        Send(smartConfig.text "{Enter}")
+                        SendEvent(smartConfig.text)
+                        Sleep(200)
+                        
+                        ; Usar botón físico si existe, si no, Enter
+                        if (guardianConfig.enterFile != "" && FileExist(guardianConfig.enterFile) && ImageSearch(&eX, &eY, 0, searchY_btns, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.enterFile)) {
+                            Click(eX + 10, eY + 10)
+                        } else {
+                            SendEvent("{Enter}")
+                        }
                         global isRoboTyping := false
                         
                         TrayTip("ButtonBot", "⚡ SmartResponse: " smartConfig.text, 1)
                         return
-                    } else {
-                        ; Opcional: Descomentar para ver si llega aquí pero no encuentra el placeholder
-                        ; TrayTip("ButtonBot", "Esperando placeholder...", 1)
                     }
                 }
             } catch {
@@ -227,93 +338,33 @@ DetectAndApprove() {
             }
         }
     }
-    ; --- INICIO LÓGICA CONTEXT GUARDIAN (OPTIMIZADO: Escaneo cada 5 ciclos ~1s) ---
-    global guardianCycles := guardianCycles + 1
     
-    if guardianConfig.enabled && (Mod(guardianCycles, 5) == 0) && (currentTime - lastGuardianAction > guardianConfig.cooldown) {
-        ; 1. ¿Aviso de compactación? (Buscamos en ventana completa)
-        if (guardianConfig.compactFile != "" && FileExist(guardianConfig.compactFile) && ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile)) {
-            if FileExist(guardianConfig.compactPromptFile) {
-                lastGuardianAction := currentTime
-                prompt := FileRead(guardianConfig.compactPromptFile)
-                
-                ; Enfocar campo y enviar
-                searchY := (winY + winH) - 250
-                if searchY < winY
-                    searchY := winY
-                
-                if ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) {
-                    global isRoboTyping := true
-                    Click(tX + 20, tY + 10)
-                    Sleep(300)
-                    A_Clipboard := prompt
-                    Send("^v{Enter}")
-                    global isRoboTyping := false
-                    TrayTip("ButtonBot", "💾 Context Guardian: Enviando Volcado de Memoria", 1)
-                    return
-                }
-            }
-        }
-        
-        ; 2. ¿Error de contexto lleno?
-        if (guardianConfig.recoveryFile != "" && FileExist(guardianConfig.recoveryFile) && ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile)) {
-            if FileExist(guardianConfig.recoveryPromptFile) {
-                lastGuardianAction := currentTime
-                prompt := FileRead(guardianConfig.recoveryPromptFile)
-                
-                ; Enfocar campo y enviar
-                searchY := (winY + winH) - 250
-                if searchY < winY
-                    searchY := winY
-                
-                if ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) {
-                    global isRoboTyping := true
-                    Click(tX + 20, tY + 10)
-                    Sleep(300)
-                    A_Clipboard := prompt
-                    Send("^v{Enter}")
-                    global isRoboTyping := false
-                    TrayTip("ButtonBot", "🔄 Context Guardian: Restaurando Contexto", 1)
-                    return
-                }
-            }
-        }
+        ; Procesar cada botón configurado (OPTIMIZADO: Escaneo cada 10 ciclos ~2s)
+        if (Mod(guardianCycles, 10) != 0)
+            return
 
-        ; 3. ¿La IA dijo 'LISTO' y se ve el botón 'ALLOW'? (Auto-compactación)
-        if (guardianConfig.listoFile != "" && FileExist(guardianConfig.listoFile) && ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile)) {
-            if (guardianConfig.allowFile != "" && FileExist(guardianConfig.allowFile) && ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile)) {
-                lastGuardianAction := currentTime
-                Click(aX + 20, aY + 10)
-                TrayTip("ButtonBot", "✅ Context Guardian: Compactación Permitida automáticamente", 1)
-                return
-            }
-        }
-    }
-    ; --- FIN LÓGICA CONTEXT GUARDIAN ---
-    
-    ; Procesar cada botón configurado (OPTIMIZADO: Escaneo cada 10 ciclos ~2s)
-    if (Mod(guardianCycles, 10) != 0)
-        return
-
-    for btn in buttons {
-        if !btn.enabled
-            continue
-        
-        ; Verificar cooldown primero (más rápido que ImageSearch)
-        if (currentTime - btn.lastDetection < btn.detectionCooldown)
-            continue
-        
-        ; Verificar si el usuario está escribiendo
-        if (currentTime - lastKeyPress < btn.keyPressDelay)
-            continue
-        
-        ; Validar handle antes de ImageSearch
-        try {
-            if !WinExist("ahk_id " hwnd)
-                return
+        searchW_chat := (winW > 600) ? 600 : winW
+        searchY_msgs := (winH > 1000) ? winH - 1000 : 0
+        searchY_btns := (winH > 500) ? winH - 500 : 0
+        for btn in buttons {
+            if !btn.enabled
+                continue
             
-            ; Buscar el botón (operación costosa)
-            if ImageSearch(&foundX, &foundY, winX, winY, winX + winW, winY + winH, "*" btn.imageVariation " " btn.file) {
+            ; Verificar cooldown primero (más rápido que ImageSearch)
+            if (currentTime - btn.lastDetection < btn.detectionCooldown)
+                continue
+            
+            ; Verificar si el usuario está escribiendo
+            if (currentTime - lastKeyPress < btn.keyPressDelay)
+                continue
+            
+            ; Validar handle antes de ImageSearch
+            try {
+                if !WinExist("ahk_id " hwnd)
+                    return
+                
+                ; Buscar el botón en la zona del chat (ahora ultra-rápido)
+                if ImageSearch(&foundX, &foundY, 0, 0, searchW_chat, winH, "*" btn.imageVariation " " btn.file) {
                 ; Ejecutar acción según configuración (OPTIMIZADO)
                 if btn.action = "click" {
                     Click(foundX + 10, foundY + 10)
@@ -350,6 +401,10 @@ DetectAndApprove() {
 *^!+t:: {
     global smartConfig, buttons, guardianConfig, defaults
     
+    ; Asegurar coherencia de coordenadas desde el inicio
+    CoordMode("Pixel", "Window")
+    CoordMode("Mouse", "Window")
+    
     hwnd := WinExist("A")
     if !hwnd {
         TrayTip("ButtonBot", "Error: No hay una ventana activa", 1)
@@ -360,33 +415,46 @@ DetectAndApprove() {
         WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " hwnd)
         
         startTime := A_TickCount
-        searchY := (winY + winH) - 250
-        if searchY < winY
-            searchY := winY
+        searchW_chat := Integer(winW * 0.45)
+        searchY_msgs := 0
+        searchY_btns := Integer(winH * 0.65)
+        searchY_input_rel := winH - 600
+        if searchY_input_rel < 0
+            searchY_input_rel := 0
         
         ; 1. SmartResponse Results
         fileStop := StrSplit(smartConfig.stopFile, ["/", "\"]).Pop()
         fileTrig := StrSplit(smartConfig.triggerFile, ["/", "\"]).Pop()
         eStop := (smartConfig.stopFile != "" && FileExist(smartConfig.stopFile))
         eTrig := (smartConfig.triggerFile != "" && FileExist(smartConfig.triggerFile))
-        fStop := eStop ? ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile) : 0
-        fTrigger := eTrig ? ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) : 0
+        fStop := eStop ? ImageSearch(&sX, &sY, 0, 0, searchW_chat, winH, "*" smartConfig.variation " " smartConfig.stopFile) : 0
+        fTrigger := eTrig ? ImageSearch(&tX, &tY, 0, searchY_input_rel, searchW_chat, winH, "*" smartConfig.variation " " smartConfig.triggerFile) : 0
         
         ; 2. Context Guardian Results
         fileComp := StrSplit(guardianConfig.compactFile, ["/", "\"]).Pop()
         fileRec := StrSplit(guardianConfig.recoveryFile, ["/", "\"]).Pop()
         fileListo := StrSplit(guardianConfig.listoFile, ["/", "\"]).Pop()
         fileAllow := StrSplit(guardianConfig.allowFile, ["/", "\"]).Pop()
+        fileFin := StrSplit(guardianConfig.finishedFile, ["/", "\"]).Pop()
+        fileArrow := StrSplit(guardianConfig.arrowFile, ["/", "\"]).Pop()
+        fileEnter := StrSplit(guardianConfig.enterFile, ["/", "\"]).Pop()
         
         eCompact := (guardianConfig.compactFile != "" && FileExist(guardianConfig.compactFile))
         eRecovery := (guardianConfig.recoveryFile != "" && FileExist(guardianConfig.recoveryFile))
         eListo := (guardianConfig.listoFile != "" && FileExist(guardianConfig.listoFile))
         eAllow := (guardianConfig.allowFile != "" && FileExist(guardianConfig.allowFile))
+        eFinished := (guardianConfig.finishedFile != "" && FileExist(guardianConfig.finishedFile))
+        eArrow := (guardianConfig.arrowFile != "" && FileExist(guardianConfig.arrowFile))
+        eEnter := (guardianConfig.enterFile != "" && FileExist(guardianConfig.enterFile))
         
-        fCompact := eCompact ? ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile) : 0
-        fRecovery := eRecovery ? ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile) : 0
-        fListo := eListo ? ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile) : 0
-        fAllow := eAllow ? ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile) : 0
+        CoordMode("Pixel", "Window")
+        fCompact := eCompact ? ImageSearch(&cX, &cY, 0, searchY_msgs, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.compactFile) : 0
+        fRecovery := eRecovery ? ImageSearch(&rX, &rY, 0, searchY_msgs, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile) : 0
+        fListo := eListo ? ImageSearch(&lX, &lY, 0, searchY_msgs, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.listoFile) : 0
+        fAllow := eAllow ? ImageSearch(&aX, &aY, 0, searchY_btns, searchW_chat, winH, "*70 " guardianConfig.allowFile) : 0
+        fArrow := eArrow ? ImageSearch(&arX, &arY, 200, searchY_btns, 800, winH, "*100 " guardianConfig.arrowFile) : 0
+        fFinished := eFinished ? ImageSearch(&fX, &fY, 0, searchY_msgs, searchW_chat, winH, "*" defaults.imageVariation " " guardianConfig.finishedFile) : 0
+        fEnter := eEnter ? ImageSearch(&enX, &enY, 0, searchY_btns, searchW_chat, winH, "*70 " guardianConfig.enterFile) : 0
 
         capsStatus := GetKeyState("CapsLock", "T") ? "🔴 ACTIVADO (Kill-switch)" : "🟢 DESACTIVADO"
         softStatus := smartConfig.enabled ? "🟢 ACTIVO" : "⏸ PAUSADO (Manual)"
@@ -399,23 +467,44 @@ DetectAndApprove() {
              . "Ask (Listo) [" fileTrig "]: " (eTrig ? "📁 " : "📁❌ ") (fTrigger ? "🔍✅" : "🔍❌") "`n`n"
              . "--- CONTEXT GUARDIAN ---`n"
              . "Compact Warning [" fileComp "]: " (eCompact ? "📁 " : "📁❌ ") (fCompact ? "🔍✅" : "🔍❌") "`n"
-             . "Recovery Error [" fileRec "]: " (eRecovery ? "📁 " : "📁❌ ") (fRecovery ? "🔍✅" : "🔍❌") "`n"
              . "IA Confirm (Listo) [" fileListo "]: " (eListo ? "📁 " : "📁❌ ") (fListo ? "🔍✅" : "🔍❌") "`n"
-             . "Allow Button [" fileAllow "]: " (eAllow ? "📁 " : "📁❌ ") (fAllow ? "🔍✅" : "🔍❌") "`n`n"
+             . "Allow Button [" fileAllow "]: " (eAllow ? "📁 " : "📁❌ ") (fAllow ? "🔍✅" : "🔍❌") "`n"
+             . "Arrow Button [" fileArrow "]: " (eArrow ? "📁 " : "📁❌ ") (fArrow ? "🔍✅" : "🔍❌") "`n"
+             . "Enter Button [" fileEnter "]: " (eEnter ? "📁 " : "📁❌ ") (fEnter ? "🔍✅" : "🔍❌") "`n`n"
              . "--- BOTONES ACTIVOS ---`n"
         
-        ; 2. Botones del Config
+        ; Calcular Próxima Acción (Siguiendo la nueva prioridad)
+        nextAction := "Ninguna (Esperando)"
+        if (fArrow) {
+            nextAction := "⬇️ CLICK ARROW (Avanzar Chat)"
+        } else if (fListo && fAllow) {
+            nextAction := "✅ CLICK ALLOW (Permitir Compactación)"
+        } else if (fFinished || fRecovery) {
+            if (fTrigger)
+                nextAction := "🔄 ENVIAR RECOVERY (Restaurar Contexto)"
+            else
+                nextAction := "⏳ ESPERANDO INPUT PARA RECOVERY"
+        } else if (fCompact) {
+            if (fTrigger)
+                nextAction := "💾 ENVIAR COMPACTION (Volcado de Memoria)"
+            else
+                nextAction := "⏳ ESPERANDO INPUT PARA COMPACTION"
+        } else if (!fStop && fTrigger) {
+            nextAction := "⚡ SMART RESPONSE (Continuar)"
+        }
+        
+        ; 2. Botones del Config (También en el 40% izquierdo)
         for btn in buttons {
             if !btn.enabled
                 continue
             
-            ; Intentar buscar en ventana completa para botones generales
             name := StrSplit(btn.file, ["\", "/"]).Pop()
-            found := ImageSearch(&fX, &fY, winX, winY, winX + winW, winY + winH, "*" btn.imageVariation " " btn.file)
+            found := ImageSearch(&fX, &fY, 0, 0, searchW_chat, winH, "*" btn.imageVariation " " btn.file)
             msg .= name ": " (found ? "✅" : "❌") "`n"
         }
         
         elapsed := A_TickCount - startTime
+        msg .= "`nPROXIMA ACCION: " nextAction
         msg .= "`nTiempo: " elapsed " ms | Var: " smartConfig.variation
              
         ToolTip(msg)

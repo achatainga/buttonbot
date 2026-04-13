@@ -190,11 +190,12 @@ DetectAndApprove() {
         return  ; Ventana no válida
     }
     
+    ; --- KILL-SWITCH GLOBAL (CAPSLOCK) ---
+    if GetKeyState("CapsLock", "T") == 1
+        return
+    
     ; --- INICIO LÓGICA SMART RESPONSE ---
     if smartConfig.enabled {
-        if GetKeyState("CapsLock", "T") == 1
-            return
-
         if (currentTime - lastSmartResponse > smartConfig.cooldown) {
             try {
                 ; 1. ¿Está la IA trabajando? (Buscamos solo en los últimos 250px para máxima velocidad)
@@ -360,7 +361,11 @@ DetectAndApprove() {
         foundListo := ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile)
         foundAllow := ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile)
 
-        msg := "--- SMART RESPONSE ---`n"
+        capsStatus := GetKeyState("CapsLock", "T") ? "🔴 ACTIVADO (Bot Pausado)" : "🟢 DESACTIVADO (Bot Operativo)"
+        
+        msg := "ESTADO GLOBAL:`n"
+             . "CapsLock: " capsStatus "`n`n"
+             . "--- SMART RESPONSE ---`n"
              . "Stop (Trabajando): " (foundStop ? "❌" : "✅") "`n"
              . "Ask (Listo): " (foundTrigger ? "✅" : "❌") "`n`n"
              . "--- CONTEXT GUARDIAN ---`n"

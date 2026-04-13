@@ -1,0 +1,6 @@
+⚠ ALERTA DE RECUPERACIÓN: El historial del chat ha sido compactado o limpiado. Has perdido tu hilo de pensamiento reciente.
+
+INSTRUCCIÓN:
+Lee INMEDIATAMENTE el archivo: C:\code\.amazonq\rules\LATEST_CHECKPOINT.md
+
+Este archivo contiene tu último estado de trabajo, el plan en curso y la tarea exacta que estabas ejecutando. Restaura tu memoria con ese archivo y continúa con la tarea sin preguntar qué hacer. Tu objetivo es actuar como si nada hubiera pasado.

@@ -1,0 +1,9 @@
+⚠ ALERTA DE COMPACTACIÓN: Tu ventana de contexto está casi llena. Antes de que el historial se borre o compacte, debes realizar un volcado de memoria crítico para mantener la continuidad del trabajo.
+
+INSTRUCCIONES:
+1. Resume el estado actual del plan maestro y la tarea específica en la que trabajamos.
+2. Lista los últimos errores corregidos y comandos que funcionaron perfectamente.
+3. Define claramente cuál es el objetivo inmediato que ibas a realizar a continuación.
+4. Crea o actualiza el archivo maestro en: C:\code\.amazonq\rules\LATEST_CHECKPOINT.md con toda esta información estructurada.
+
+Responde ÚNICAMENTE con la palabra 'LISTO' cuando hayas actualizado el archivo para que yo pueda permitir la compactación.

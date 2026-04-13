@@ -19,6 +19,7 @@ global buttons := []
 global lastKeyPress := 0
 global lastSmartResponse := 0
 global isRoboTyping := false
+global lastGuardianAction := 0
 global smartConfig := {
     enabled: false,
     stopFile: "",
@@ -26,6 +27,15 @@ global smartConfig := {
     text: "",
     cooldown: 5000,
     variation: 70
+}
+
+global guardianConfig := {
+    enabled: false,
+    compactFile: "",
+    recoveryFile: "",
+    compactPromptFile: "",
+    recoveryPromptFile: "",
+    cooldown: 30000
 }
 
 ; Detectar cuando el usuario escribe
@@ -133,6 +143,16 @@ LoadConfig() {
         smartConfig.cooldown := Integer(IniRead(CONFIG_FILE, "SmartResponse", "Cooldown", "5000"))
         smartConfig.variation := Integer(IniRead(CONFIG_FILE, "SmartResponse", "ImageVariation", "70"))
     }
+    
+    ; Cargar ContextGuardian
+    guardianConfig.enabled := IniRead(CONFIG_FILE, "ContextGuardian", "Enabled", "false") = "true"
+    if guardianConfig.enabled {
+        guardianConfig.compactFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "CompactFile", "compact.png")
+        guardianConfig.recoveryFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "RecoveryFile", "too_much_content.png")
+        guardianConfig.compactPromptFile := A_ScriptDir "\" IniRead(CONFIG_FILE, "ContextGuardian", "CompactPromptFile", "prompts\compaction.txt")
+        guardianConfig.recoveryPromptFile := A_ScriptDir "\" IniRead(CONFIG_FILE, "ContextGuardian", "RecoveryPromptFile", "prompts\recovery.txt")
+        guardianConfig.cooldown := Integer(IniRead(CONFIG_FILE, "ContextGuardian", "Cooldown", "30000"))
+    }
 }
 
 ; Iniciar monitoreo con intervalo optimizado
@@ -151,7 +171,7 @@ TrayTip("ButtonBot", "✓ Activo | " defaults.reloadHotkey ": Reload | " default
 
 ; Función principal de detección (OPTIMIZADA + HANDLE VALIDATION)
 DetectAndApprove() {
-    global buttons, lastKeyPress, lastSmartResponse, smartConfig
+    global buttons, lastKeyPress, lastSmartResponse, lastGuardianAction, smartConfig, guardianConfig
     
     if !WinActive("ahk_exe Code.exe") && !WinActive("ahk_exe antigravity.exe")
         return
@@ -201,7 +221,57 @@ DetectAndApprove() {
             }
         }
     }
-    ; --- FIN LÓGICA SMART RESPONSE ---
+    ; --- INICIO LÓGICA CONTEXT GUARDIAN ---
+    if guardianConfig.enabled && (currentTime - lastGuardianAction > guardianConfig.cooldown) {
+        ; 1. ¿Aviso de compactación? (Buscamos en ventana completa porque puede salir en cualquier lado)
+        if ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile) {
+            if FileExist(guardianConfig.compactPromptFile) {
+                lastGuardianAction := currentTime
+                prompt := FileRead(guardianConfig.compactPromptFile)
+                
+                ; Enfocar campo y enviar
+                searchY := (winY + winH) - 250
+                if searchY < winY
+                    searchY := winY
+                
+                if ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) {
+                    global isRoboTyping := true
+                    Click(tX + 20, tY + 10)
+                    Sleep(300)
+                    A_Clipboard := prompt
+                    Send("^v{Enter}")
+                    global isRoboTyping := false
+                    TrayTip("ButtonBot", "💾 Context Guardian: Enviando Volcado de Memoria", 1)
+                    return
+                }
+            }
+        }
+        
+        ; 2. ¿Error de contexto lleno?
+        if ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile) {
+            if FileExist(guardianConfig.recoveryPromptFile) {
+                lastGuardianAction := currentTime
+                prompt := FileRead(guardianConfig.recoveryPromptFile)
+                
+                ; Enfocar campo y enviar
+                searchY := (winY + winH) - 250
+                if searchY < winY
+                    searchY := winY
+                
+                if ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) {
+                    global isRoboTyping := true
+                    Click(tX + 20, tY + 10)
+                    Sleep(300)
+                    A_Clipboard := prompt
+                    Send("^v{Enter}")
+                    global isRoboTyping := false
+                    TrayTip("ButtonBot", "🔄 Context Guardian: Restaurando Contexto", 1)
+                    return
+                }
+            }
+        }
+    }
+    ; --- FIN LÓGICA CONTEXT GUARDIAN ---
     
     ; Procesar cada botón configurado
     for btn in buttons {
@@ -271,9 +341,16 @@ DetectAndApprove() {
         foundStop := ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile)
         foundTrigger := ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile)
         
+        ; 2. Context Guardian Results
+        foundCompact := ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile)
+        foundRecovery := ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile)
+
         msg := "--- SMART RESPONSE ---`n"
              . "Stop (Trabajando): " (foundStop ? "❌" : "✅") "`n"
              . "Ask (Listo): " (foundTrigger ? "✅" : "❌") "`n`n"
+             . "--- CONTEXT GUARDIAN ---`n"
+             . "Compact Warning: " (foundCompact ? "✅" : "❌") "`n"
+             . "Recovery Error: " (foundRecovery ? "✅" : "❌") "`n`n"
              . "--- BOTONES ACTIVOS ---`n"
         
         ; 2. Botones del Config

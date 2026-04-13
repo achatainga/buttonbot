@@ -359,26 +359,41 @@ DetectAndApprove() {
             searchY := winY
         
         ; 1. SmartResponse Results
-        fStop := (smartConfig.stopFile != "" && FileExist(smartConfig.stopFile)) ? ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile) : 0
-        fTrigger := (smartConfig.triggerFile != "" && FileExist(smartConfig.triggerFile)) ? ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) : 0
+        fileStop := StrSplit(smartConfig.stopFile, ["/", "\"]).Pop()
+        fileTrig := StrSplit(smartConfig.triggerFile, ["/", "\"]).Pop()
+        eStop := (smartConfig.stopFile != "" && FileExist(smartConfig.stopFile))
+        eTrig := (smartConfig.triggerFile != "" && FileExist(smartConfig.triggerFile))
+        fStop := eStop ? ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile) : 0
+        fTrigger := eTrig ? ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) : 0
         
-        fCompact := (guardianConfig.compactFile != "" && FileExist(guardianConfig.compactFile)) ? ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile) : 0
-        fRecovery := (guardianConfig.recoveryFile != "" && FileExist(guardianConfig.recoveryFile)) ? ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile) : 0
-        fListo := (guardianConfig.listoFile != "" && FileExist(guardianConfig.listoFile)) ? ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile) : 0
-        fAllow := (guardianConfig.allowFile != "" && FileExist(guardianConfig.allowFile)) ? ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile) : 0
+        ; 2. Context Guardian Results
+        fileComp := StrSplit(guardianConfig.compactFile, ["/", "\"]).Pop()
+        fileRec := StrSplit(guardianConfig.recoveryFile, ["/", "\"]).Pop()
+        fileListo := StrSplit(guardianConfig.listoFile, ["/", "\"]).Pop()
+        fileAllow := StrSplit(guardianConfig.allowFile, ["/", "\"]).Pop()
+        
+        eCompact := (guardianConfig.compactFile != "" && FileExist(guardianConfig.compactFile))
+        eRecovery := (guardianConfig.recoveryFile != "" && FileExist(guardianConfig.recoveryFile))
+        eListo := (guardianConfig.listoFile != "" && FileExist(guardianConfig.listoFile))
+        eAllow := (guardianConfig.allowFile != "" && FileExist(guardianConfig.allowFile))
+        
+        fCompact := eCompact ? ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile) : 0
+        fRecovery := eRecovery ? ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile) : 0
+        fListo := eListo ? ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile) : 0
+        fAllow := eAllow ? ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile) : 0
 
         capsStatus := GetKeyState("CapsLock", "T") ? "🔴 ACTIVADO (Bot Pausado)" : "🟢 DESACTIVADO (Bot Operativo)"
         
         msg := "ESTADO GLOBAL:`n"
              . "CapsLock: " capsStatus "`n`n"
              . "--- SMART RESPONSE ---`n"
-             . "Stop (Trabajando): " (fStop ? "❌" : "✅") "`n"
-             . "Ask (Listo): " (fTrigger ? "✅" : "❌") "`n`n"
+             . "Stop (IA Trabajando) [" fileStop "]: " (eStop ? "📁 " : "📁❌ ") (fStop ? "🔍✅" : "🔍❌") "`n"
+             . "Ask (Listo) [" fileTrig "]: " (eTrig ? "📁 " : "📁❌ ") (fTrigger ? "🔍✅" : "🔍❌") "`n`n"
              . "--- CONTEXT GUARDIAN ---`n"
-             . "Compact Warning: " (fCompact ? "✅" : "❌") "`n"
-             . "Recovery Error: " (fRecovery ? "✅" : "❌") "`n"
-             . "IA Confirm (Listo): " (fListo ? "✅" : "❌") "`n"
-             . "Allow Button: " (fAllow ? "✅" : "❌") "`n`n"
+             . "Compact Warning [" fileComp "]: " (eCompact ? "📁 " : "📁❌ ") (fCompact ? "🔍✅" : "🔍❌") "`n"
+             . "Recovery Error [" fileRec "]: " (eRecovery ? "📁 " : "📁❌ ") (fRecovery ? "🔍✅" : "🔍❌") "`n"
+             . "IA Confirm (Listo) [" fileListo "]: " (eListo ? "📁 " : "📁❌ ") (fListo ? "🔍✅" : "🔍❌") "`n"
+             . "Allow Button [" fileAllow "]: " (eAllow ? "📁 " : "📁❌ ") (fAllow ? "🔍✅" : "🔍❌") "`n`n"
              . "--- BOTONES ACTIVOS ---`n"
         
         ; 2. Botones del Config

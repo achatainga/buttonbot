@@ -35,6 +35,8 @@ global guardianConfig := {
     recoveryFile: "",
     compactPromptFile: "",
     recoveryPromptFile: "",
+    listoFile: "",
+    allowFile: "",
     cooldown: 30000
 }
 
@@ -151,6 +153,8 @@ LoadConfig() {
         guardianConfig.recoveryFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "RecoveryFile", "too_much_content.png")
         guardianConfig.compactPromptFile := A_ScriptDir "\" IniRead(CONFIG_FILE, "ContextGuardian", "CompactPromptFile", "prompts\compaction.txt")
         guardianConfig.recoveryPromptFile := A_ScriptDir "\" IniRead(CONFIG_FILE, "ContextGuardian", "RecoveryPromptFile", "prompts\recovery.txt")
+        guardianConfig.listoFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "ListoFile", "listo.png")
+        guardianConfig.allowFile := IMAGES_DIR IniRead(CONFIG_FILE, "ContextGuardian", "AllowFile", "allow.png")
         guardianConfig.cooldown := Integer(IniRead(CONFIG_FILE, "ContextGuardian", "Cooldown", "30000"))
     }
 }
@@ -270,6 +274,16 @@ DetectAndApprove() {
                 }
             }
         }
+
+        ; 3. ¿La IA dijo 'LISTO' y se ve el botón 'ALLOW'? (Auto-compactación)
+        if ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile) {
+            if ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile) {
+                lastGuardianAction := currentTime
+                Click(aX + 20, aY + 10)
+                TrayTip("ButtonBot", "✅ Context Guardian: Compactación Permitida automáticamente", 1)
+                return
+            }
+        }
     }
     ; --- FIN LÓGICA CONTEXT GUARDIAN ---
     
@@ -341,16 +355,19 @@ DetectAndApprove() {
         foundStop := ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile)
         foundTrigger := ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile)
         
-        ; 2. Context Guardian Results
         foundCompact := ImageSearch(&cX, &cY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.compactFile)
         foundRecovery := ImageSearch(&rX, &rY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.recoveryFile)
+        foundListo := ImageSearch(&lX, &lY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.listoFile)
+        foundAllow := ImageSearch(&aX, &aY, winX, winY, winX + winW, winY + winH, "*" defaults.imageVariation " " guardianConfig.allowFile)
 
         msg := "--- SMART RESPONSE ---`n"
              . "Stop (Trabajando): " (foundStop ? "❌" : "✅") "`n"
              . "Ask (Listo): " (foundTrigger ? "✅" : "❌") "`n`n"
              . "--- CONTEXT GUARDIAN ---`n"
              . "Compact Warning: " (foundCompact ? "✅" : "❌") "`n"
-             . "Recovery Error: " (foundRecovery ? "✅" : "❌") "`n`n"
+             . "Recovery Error: " (foundRecovery ? "✅" : "❌") "`n"
+             . "IA Confirm (Listo): " (foundListo ? "✅" : "❌") "`n"
+             . "Allow Button: " (foundAllow ? "✅" : "❌") "`n`n"
              . "--- BOTONES ACTIVOS ---`n"
         
         ; 2. Botones del Config

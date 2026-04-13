@@ -1,5 +1,6 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
+A_MaxHotkeysPerInterval := 200 ; Evitar error de "71 hotkeys"
 
 ; Rutas portables
 global CONFIG_FILE := A_ScriptDir "\config\config.ini"
@@ -16,6 +17,16 @@ global defaults := {
 
 global buttons := []
 global lastKeyPress := 0
+global lastSmartResponse := 0
+global isRoboTyping := false
+global smartConfig := {
+    enabled: false,
+    stopFile: "",
+    triggerFile: "",
+    text: "",
+    cooldown: 5000,
+    variation: 70
+}
 
 ; Detectar cuando el usuario escribe
 ~*a::
@@ -47,7 +58,9 @@ global lastKeyPress := 0
 ~Space::
 ~Enter::
 ~Backspace:: {
-    global lastKeyPress
+    global lastKeyPress, isRoboTyping
+    if isRoboTyping
+        return
     lastKeyPress := A_TickCount
 }
 
@@ -110,56 +123,118 @@ LoadConfig() {
         buttons.Push(btn)
         index++
     }
+    
+    ; Cargar SmartResponse
+    smartConfig.enabled := IniRead(CONFIG_FILE, "SmartResponse", "Enabled", "false") = "true"
+    if smartConfig.enabled {
+        smartConfig.stopFile := IMAGES_DIR IniRead(CONFIG_FILE, "SmartResponse", "StopFile", "stop.png")
+        smartConfig.triggerFile := IMAGES_DIR IniRead(CONFIG_FILE, "SmartResponse", "TriggerFile", "ask_question.png")
+        smartConfig.text := IniRead(CONFIG_FILE, "SmartResponse", "Text", "Si, continua")
+        smartConfig.cooldown := Integer(IniRead(CONFIG_FILE, "SmartResponse", "Cooldown", "5000"))
+        smartConfig.variation := Integer(IniRead(CONFIG_FILE, "SmartResponse", "ImageVariation", "70"))
+    }
 }
 
-; Iniciar monitoreo con el intervalo más corto de todos los botones
+; Iniciar monitoreo con intervalo optimizado
+; Usar el intervalo más corto de botones activos, mínimo 50ms para evitar sobrecarga
 minInterval := defaults.interval
 for btn in buttons {
     if btn.enabled && btn.interval < minInterval
         minInterval := btn.interval
 }
+; Limitar a mínimo 50ms para evitar uso excesivo de CPU
+if minInterval < 50
+    minInterval := 50
 SetTimer(DetectAndApprove, minInterval)
 
 TrayTip("ButtonBot", "✓ Activo | " defaults.reloadHotkey ": Reload | " defaults.configHotkey ": Config | Ctrl+Alt+P: Pausar", 4)
 
-; Función principal de detección
+; Función principal de detección (OPTIMIZADA + HANDLE VALIDATION)
 DetectAndApprove() {
-    global buttons, lastKeyPress
+    global buttons, lastKeyPress, lastSmartResponse, smartConfig
     
-    if !WinActive("ahk_exe Code.exe")
+    if !WinActive("ahk_exe Code.exe") && !WinActive("ahk_exe antigravity.exe")
         return
     
-    WinGetPos(&winX, &winY, &winW, &winH, "A")
+    currentTime := A_TickCount
+    
+    ; Capturar handle y validar existencia
+    try {
+        hwnd := WinGetID("A")
+        WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " hwnd)
+    } catch {
+        return  ; Ventana no válida
+    }
+    
+    ; --- INICIO LÓGICA SMART RESPONSE ---
+    if smartConfig.enabled {
+        if GetKeyState("CapsLock", "T") == 1
+            return
+
+        if (currentTime - lastSmartResponse > smartConfig.cooldown) {
+            try {
+                ; 1. ¿Está la IA trabajando? (Buscamos solo en los últimos 250px para máxima velocidad)
+                searchY := (winY + winH) - 250
+                if searchY < winY
+                    searchY := winY
+                
+                if !ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile) {
+                    
+                    ; 2. ¿Está el campo listo para escribir?
+                    if ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile) {
+                        lastSmartResponse := currentTime
+                        global isRoboTyping := true
+                        Click(tX + 20, tY + 10)
+                        Sleep(300)
+                        Send(smartConfig.text "{Enter}")
+                        global isRoboTyping := false
+                        
+                        TrayTip("ButtonBot", "⚡ SmartResponse: " smartConfig.text, 1)
+                        return
+                    } else {
+                        ; Opcional: Descomentar para ver si llega aquí pero no encuentra el placeholder
+                        ; TrayTip("ButtonBot", "Esperando placeholder...", 1)
+                    }
+                }
+            } catch {
+                ; Error en búsqueda
+            }
+        }
+    }
+    ; --- FIN LÓGICA SMART RESPONSE ---
     
     ; Procesar cada botón configurado
     for btn in buttons {
         if !btn.enabled
             continue
         
-        ; Verificar si el usuario está escribiendo (específico por botón)
-        if (A_TickCount - lastKeyPress < btn.keyPressDelay)
+        ; Verificar cooldown primero (más rápido que ImageSearch)
+        if (currentTime - btn.lastDetection < btn.detectionCooldown)
             continue
         
-        ; Verificar cooldown (específico por botón)
-        if (A_TickCount - btn.lastDetection < btn.detectionCooldown)
+        ; Verificar si el usuario está escribiendo
+        if (currentTime - lastKeyPress < btn.keyPressDelay)
             continue
         
-        ; Buscar el botón
-        if ImageSearch(&foundX, &foundY, winX, winY, winX + winW, winY + winH, "*" btn.imageVariation " " btn.file) {
-            ; Ejecutar acción según configuración
-            if btn.action = "click" {
-                MouseGetPos(&originalX, &originalY)
-                Click(foundX + 10, foundY + 10)
-                MouseMove(originalX, originalY, 0)
-            } else if btn.action = "hotkey" && btn.HasOwnProp("hotkey") {
-                focusedControl := ControlGetFocus("A")
-                SendInput(btn.hotkey)
-                if focusedControl
-                    ControlFocus(focusedControl, "A")
-            }
+        ; Validar handle antes de ImageSearch
+        try {
+            if !WinExist("ahk_id " hwnd)
+                return
             
-            btn.lastDetection := A_TickCount
-            return
+            ; Buscar el botón (operación costosa)
+            if ImageSearch(&foundX, &foundY, winX, winY, winX + winW, winY + winH, "*" btn.imageVariation " " btn.file) {
+                ; Ejecutar acción según configuración (OPTIMIZADO)
+                if btn.action = "click" {
+                    Click(foundX + 10, foundY + 10)
+                } else if btn.action = "hotkey" && btn.HasOwnProp("hotkey") {
+                    Send(btn.hotkey)
+                }
+                
+                btn.lastDetection := currentTime
+                return  ; CRITICAL: Early-exit al encontrar botón
+            }
+        } catch {
+            return  ; Handle inválido durante ImageSearch
         }
     }
 }
@@ -172,12 +247,42 @@ DetectAndApprove() {
     CAPTURAR BOTÓN:
     
     1. Presiona Win+Shift+S
-    2. Selecciona SOLO el botón
+    2. Selecciona SOLO el botón o un trozo de texto único
     3. Guarda como: nombre.png
     4. Coloca el archivo en: " IMAGES_DIR "
     
-    El script detectará el botón en cualquier posición.
+    El script detectará la imagen en cualquier posición.
     )", "Instrucciones de Captura")
+}
+
+; Prueba de detección Ctrl+Alt+Shift+T
+^!+t:: {
+    global smartConfig
+    try {
+        hwnd := WinGetID("A")
+        WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " hwnd)
+        
+        startTime := A_TickCount
+        
+        ; Restringir búsqueda solo a los últimos 250px para máxima velocidad
+        searchY := (winY + winH) - 250
+        if searchY < winY
+            searchY := winY
+        
+        foundStop := ImageSearch(&sX, &sY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.stopFile)
+        foundTrigger := ImageSearch(&tX, &tY, winX, searchY, winX + winW, winY + winH, "*" smartConfig.variation " " smartConfig.triggerFile)
+        
+        elapsed := A_TickCount - startTime
+        
+        msg := "IA Trabajando (Stop): " (foundStop ? "❌ DETECTADO" : "✅ NO visible") . "`n"
+             . "Campo Listo (Ask): " (foundTrigger ? "✅ DETECTADO" : "❌ NO visible") . "`n"
+             . "Variación: " smartConfig.variation . "`n"
+             . "Tiempo de búsqueda: " elapsed " ms"
+             
+        TrayTip(msg, "ButtonBot Diagnóstico", 4)
+    } catch {
+        TrayTip("ButtonBot", "Error: Asegúrate de que la ventana esté activa", 1)
+    }
 }
 
 ; Configurar hotkeys dinámicos

@@ -340,11 +340,17 @@ DetectAndApprove() {
     )", "Instrucciones de Captura")
 }
 
-; Prueba de detección Ctrl+Alt+Shift+T (COMPLETA)
-^!+t:: {
-    global smartConfig, buttons
+; Prueba de detección Ctrl+Alt+Shift+T (COMPLETA - Compatible con Bloq Mayús)
+*^!+t:: {
+    global smartConfig, buttons, guardianConfig
+    
+    hwnd := WinExist("A")
+    if !hwnd {
+        TrayTip("ButtonBot", "Error: No hay una ventana activa", 1)
+        return
+    }
+
     try {
-        hwnd := WinGetID("A")
         WinGetPos(&winX, &winY, &winW, &winH, "ahk_id " hwnd)
         
         startTime := A_TickCount
